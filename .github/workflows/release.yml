@@ -1,0 +1,43 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify version and release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const p=JSON.parse(fs.readFileSync('package.json','utf8')); if ('v'+p.version !== process.env.RELEASE_TAG) throw new Error('Tag/package version mismatch'); fs.accessSync('docs/releases/'+process.env.RELEASE_TAG+'.md');"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - run: npm test
+      - run: npm run test:browser
+      - run: npm run test:stdio
+      - name: Package clean runtime and sources
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          tar -czf "bxure-log-mcp-${RELEASE_TAG}.tar.gz" dist src scripts test docs package.json package-lock.json tsconfig.json README.md CHANGELOG.md config.example.json .env.example .gitignore
+          sha256sum "bxure-log-mcp-${RELEASE_TAG}.tar.gz" > SHA256SUMS
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$RELEASE_TAG" "bxure-log-mcp-${RELEASE_TAG}.tar.gz" SHA256SUMS --verify-tag --title "$RELEASE_TAG · 单环境版本" --notes-file "docs/releases/${RELEASE_TAG}.md" --latest

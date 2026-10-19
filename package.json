@@ -1,0 +1,29 @@
+{
+  "name": "bxure-log-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "通过可见浏览器检索 Bxure 日志的本地 MCP Server",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "bxure-log-mcp": "dist/index.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "login": "tsx src/login.ts",
+    "test": "tsx --test test/*.test.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test:browser": "tsx --test test/browser.integration.ts",
+    "test:stdio": "npm run build && tsx scripts/smoke-stdio.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "playwright": "^1.64.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.bxure/
+output/
+.playwright-cli/
+.env
+.env.*
+!.env.example
+config*.local.json
+*.log
+*.tsbuildinfo
