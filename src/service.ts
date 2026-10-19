@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Config } from './config.js';
-import { adjacentFile, defaultRange, searchWithSplitting, splitLines } from './core.js';
+import { adjacentFile, defaultRange, searchWithSplitting, splitLines, timeValue, timeText } from './core.js';
 import { LogError, type Hit, type LogBackend } from './types.js';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -37,7 +37,14 @@ export class LogService {
     const instances = input.instances?.length ? [...new Set(input.instances)] : all.filter(name => name === (input.service ?? 'runner') || name.startsWith((input.service ?? 'runner') + '-'));
     if (!instances.length) throw new LogError('INSTANCE_NOT_FOUND', '没有匹配实例，请调用 list_instances');
     if (instances.some(name => !all.includes(name))) throw new LogError('INSTANCE_NOT_FOUND', '指定实例不在当前列表内，请调用 list_instances');
-    const range = input.start && input.end ? { start: input.start, end: input.end } : defaultRange(this.config.timezone);
+    let range = input.start && input.end ? { start: input.start, end: input.end } : defaultRange(this.config.timezone);
+    // Fix log system bug: end time should be date + 1 day
+    if (input.end) {
+      const endValue = timeValue(range.end);
+      const endDate = new Date(endValue);
+      endDate.setDate(endDate.getDate() + 1);
+      range = { ...range, end: timeText(endDate.getTime()) };
+    }
     const result = await searchWithSplitting(instances, input.keyword, range,
       (instance, slice) => this.backend.search(instance, input.keyword, slice),
       { maxQueries: this.config.maxQueries, minSliceSeconds: this.config.minSliceSeconds, maxHits: input.maxHits ?? 200 });
