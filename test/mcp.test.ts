@@ -19,7 +19,7 @@ test('MCP handshake, schemas, structured results and actionable errors', async (
   try {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 7);
+    assert.equal(tools.tools.length, 8);
     const instances = await client.callTool({ name: 'list_instances', arguments: {} });
     assert.deepEqual(instances.structuredContent, { instances: ['runner-a'] });
     const result = await client.callTool({ name: 'search_logs', arguments: { keyword: 'boom' } });

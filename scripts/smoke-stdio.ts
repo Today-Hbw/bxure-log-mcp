@@ -8,8 +8,8 @@ const transport = new StdioClientTransport({ command: process.execPath, args: [p
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-  if (tools.tools.length !== 7) throw new Error('Expected seven MCP tools');
+  if (tools.tools.length !== 8) throw new Error('Expected eight MCP tools');
   const error = await client.callTool({ name: 'download_log', arguments: { hitId: 'a'.repeat(24) } });
   if (!error.isError || !JSON.stringify(error.content).includes('HIT_NOT_FOUND')) throw new Error('Error response was not actionable');
-  console.log('STDIO handshake, seven tools, and error response passed. Browser was not started.');
+  console.log('STDIO handshake, eight tools, and error response passed. Browser was not started.');
 } finally { await client.close(); }
