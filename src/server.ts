@@ -9,10 +9,14 @@ export function createServer(service: LogService) {
   });
   // A single browser page must not be changed by concurrent tools/calls.
   let queue: Promise<unknown> = Promise.resolve();
-  const run = (task: () => Promise<unknown>) => {
+  const run = (task: () => Promise<unknown>, skipHint = false) => {
     const result = queue.then(async () => {
       try {
         const value = await task();
+        // Add resource hint for all tools except close_browser
+        if (!skipHint && typeof value === 'object' && value !== null) {
+          (value as Record<string, unknown>).hint = '浏览器保持打开状态以复用登录和搜索结果。如不再需要查询日志，可调用 close_browser 释放资源。';
+        }
         return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], structuredContent: value as Record<string, unknown> };
       } catch (error) {
         const value = error instanceof LogError ? { code: error.code, message: error.message } : { code: 'OPERATION_FAILED', message: '操作失败，请检查页面状态与本地配置；原始异常未回传以避免泄露认证信息' };
@@ -50,6 +54,6 @@ export function createServer(service: LogService) {
       maxChars: z.number().int().min(100).max(50000).default(24000),
     }, annotations,
   }, args => run(() => service.context(args.hitId, args)));
-  server.registerTool('close_browser', { description: '关闭专用浏览器。使用完成后可主动调用此工具释放资源；下次使用时会自动重新启动。', inputSchema: {}, annotations }, () => run(async () => { await service.backend.close(); return { closed: true }; }));
+  server.registerTool('close_browser', { description: '关闭专用浏览器。使用完成后可主动调用此工具释放资源；下次使用时会自动重新启动。', inputSchema: {}, annotations }, () => run(async () => { await service.backend.close(); return { closed: true }; }, true));
   return server;
 }

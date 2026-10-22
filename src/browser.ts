@@ -5,6 +5,14 @@ import type { Config } from './config.js';
 import { adjacentUrl, hitId } from './core.js';
 import { LogError, type Hit, type LogBackend, type TimeRange } from './types.js';
 
+function getBasicAuthHeaders(): Record<string, string> | undefined {
+  const username = process.env.BXURE_DOWNLOAD_USERNAME;
+  const password = process.env.BXURE_DOWNLOAD_PASSWORD;
+  if (!username || !password) return undefined;
+  const credentials = Buffer.from(`${username}:${password}`).toString('base64');
+  return { 'Authorization': `Basic ${credentials}` };
+}
+
 export class BrowserBackend implements LogBackend {
   private context?: BrowserContext;
   private page?: Page;
@@ -205,7 +213,7 @@ export class BrowserBackend implements LogBackend {
     finally { await frame.locator(this.config.selectors.previewClose).click(); }
   }
 
-  private async collectDownload(action: () => Promise<unknown>): Promise<{ body: Buffer; url: string }> {
+  private async collectDownload(action: () => Promise<unknown>, authHeaders?: Record<string, string>): Promise<{ body: Buffer; url: string }> {
     const context = this.context!;
     const initialPages = new Set(context.pages());
     const attached = new Set<Page>();
@@ -221,7 +229,14 @@ export class BrowserBackend implements LogBackend {
         settle({ body: await readFile(file), url: item.url() });
       } catch (error) { reject(error); }
     };
-    const attach = (page: Page) => { attached.add(page); page.on('download', download); };
+    const attach = (page: Page) => {
+      attached.add(page);
+      page.on('download', download);
+      // Apply auth headers if provided
+      if (authHeaders) {
+        page.setExtraHTTPHeaders(authHeaders).catch(() => {});
+      }
+    };
     for (const page of context.pages()) attach(page);
     context.on('page', attach);
     const response = async (res: Response) => {
@@ -264,6 +279,18 @@ export class BrowserBackend implements LogBackend {
       const result = await this.collectDownload(() => row.locator(this.config.selectors.downloadButton).first().click());
       hit.downloadUrl = result.url;
       return result.body;
+    } catch (error) {
+      // Auto-retry on auth failure with explicit Basic Auth headers
+      if (error instanceof LogError && error.code === 'DOWNLOAD_AUTH_REQUIRED') {
+        const authHeaders = getBasicAuthHeaders();
+        if (authHeaders) {
+          const retryRow = await this.row(hit);
+          const result = await this.collectDownload(() => retryRow.locator(this.config.selectors.downloadButton).first().click(), authHeaders);
+          hit.downloadUrl = result.url;
+          return result.body;
+        }
+      }
+      throw error;
     } finally {
       if (this.page && !this.page.isClosed() && this.page.url() !== this.config.url) await this.page.goto(this.config.url).catch(() => {});
     }
@@ -272,11 +299,26 @@ export class BrowserBackend implements LogBackend {
   async downloadAdjacent(hit: Hit, file: string): Promise<Buffer> {
     if (!hit.downloadUrl) throw new LogError('ADJACENT_URL_UNKNOWN', '先下载命中文件以发现真实下载地址');
     const url = adjacentUrl(hit.downloadUrl, hit.file, file);
-    const result = await this.collectDownload(async () => {
-      const page = await this.context!.newPage();
-      return page.goto(url, { waitUntil: 'domcontentloaded' });
-    });
-    return result.body;
+    try {
+      const result = await this.collectDownload(async () => {
+        const page = await this.context!.newPage();
+        return page.goto(url, { waitUntil: 'domcontentloaded' });
+      });
+      return result.body;
+    } catch (error) {
+      // Auto-retry on auth failure with explicit Basic Auth headers
+      if (error instanceof LogError && error.code === 'DOWNLOAD_AUTH_REQUIRED') {
+        const authHeaders = getBasicAuthHeaders();
+        if (authHeaders) {
+          const result = await this.collectDownload(async () => {
+            const page = await this.context!.newPage();
+            return page.goto(url, { waitUntil: 'domcontentloaded' });
+          }, authHeaders);
+          return result.body;
+        }
+      }
+      throw error;
+    }
   }
 
   async close() { await this.context?.close(); }
